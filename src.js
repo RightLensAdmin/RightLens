@@ -33,8 +33,41 @@ function renderRVU(){
  document.querySelectorAll('[data-collection]').forEach(b=>b.onclick=()=>{collection=b.dataset.collection;renderRVU()});
 }
 
+// Presentation-only cleanup: preserve the complete research source in /public/names.json.
+// Use original worksheet cell IDs to distinguish repeated reference-only entries.
+const nameReplacements={
+ 'B7':'Imitator of God\n(Ephesians 5:1)',
+ 'F7':'Loved One\n(Romans 9:25)',
+ 'B8':'Right-doer\n(1 John 3:10)',
+ 'A9':'Faith-filled Brother & Faith-filled Sister\n(Colossians 1:2)',
+ 'B10':'Righteousness of God\n(2 Corinthians 5:21)',
+ 'A11':'Healthy & Well\n(Mark 2:17)',
+ 'A12':'Wise & Enlightened\n(Ephesians 1:17)',
+ 'B12':'Wise Children\n(Luke 7:35)',
+ 'F12':'Sign & Symbol\n(Isaiah 8:18)',
+ 'F13':'Instrument of Special Purpose\n(2 Timothy 2:21)',
+ 'C14':'Holy & Clean\n(2 Timothy 2:21 & 1 Peter 2:9 & 1 Corinthians 3:17)',
+ 'F16':'Shine in the Land\n(Zechariah 9:16)',
+ 'E19':'Sign & Wonder\n(Psalm 71:7)',
+ 'C13':'Chosen\n(Revelation 17:14)',
+ 'E20':'Chosen Ones\n(Revelation 17:14)',
+ 'E21':'Faith-filled Ones\n(Revelation 17:14)'
+};
+const nameHiddenCells=new Set(['A1','B1','G1','B9','A10','B11','G12','G14','G16','F19','G19','F20','F21','E23','F23','E24','F24']);
+function visibleNames(){
+ const result=[];
+ for(const item of nameData){
+  if(nameHiddenCells.has(item.cell))continue;
+  const text=nameReplacements[item.cell]||item.text;
+  result.push({text});
+  if(item.cell==='B8')result.push({text:'Love-filled (for others)\n(1 John 3:10)'});
+  if(item.cell==='F13')result.push({text:'Ready for Good Work\n(2 Timothy 2:21)'});
+  if(item.cell==='E21')result.push({text:'Called Ones\n(Revelation 17:14)'});
+ }
+ return result;
+}
 function renderNames(){
- $('#content').innerHTML=`<section class="section-heading"><span class="eyebrow dark">IDENTITY THROUGH CHRIST</span><h2>Your Name</h2><p>God names His people. Explore every populated entry preserved from the original Names worksheet, including its references and research notes.</p></section><div class="names-grid">${nameData.map(x=>`<article class="name-tile"><span>${esc(x.text)}</span></article>`).join('')}</div><section class="ekklesia"><span class="eyebrow">CALLED OUT · CALLED INTO</span><h2>We Are His Ekklesia</h2><p><strong>Ek</strong> means “out of/from” and <strong>kaleō</strong> means “to call.” <em>Ekklēsia</em> means assembly or congregation; “called out and into” is a theological application, not a literal dictionary definition.</p><p>Darkness → His marvelous light (1 Peter 2:9)<br>Domain of darkness → Kingdom of His beloved Son (Colossians 1:13)<br>Slavery to sin → Service to righteousness (Romans 6:17–18)<br>Death → Life (John 5:24)<br>Far off → Brought near (Ephesians 2:13)</p><h3>Through one name: JESUS</h3><p>God does not merely call us out of what we were. Through Jesus Christ, He brings us into who He has called us to be. (Matthew 1:21; Acts 4:12)</p></section>`;
+ $('#content').innerHTML=`<section class="section-heading"><span class="eyebrow dark">IDENTITY THROUGH CHRIST</span><h2>Your Name</h2><p>God names His people.</p></section><div class="names-grid">${visibleNames().map(x=>`<article class="name-tile"><span>${esc(x.text).replace(/\n/g,'<br>')}</span></article>`).join('')}</div><section class="ekklesia"><span class="eyebrow">CALLED OUT · CALLED INTO</span><h2>We Are His Ekklesia</h2><p><strong>Ek</strong> means “out of/from” and <strong>kaleō</strong> means “to call.” <em>Ekklēsia</em> means assembly or congregation; “called out and into” is a theological application, not a literal dictionary definition.</p><p>Darkness → His marvelous light (1 Peter 2:9)<br>Domain of darkness → Kingdom of His beloved Son (Colossians 1:13)<br>Slavery to sin → Service to righteousness (Romans 6:17–18)<br>Death → Life (John 5:24)<br>Far off → Brought near (Ephesians 2:13)</p><h3>Through one name: JESUS</h3><p>God does not merely call us out of what we were. Through Jesus Christ, He brings us into who He has called us to be. (Matthew 1:21; Acts 4:12)</p></section>`;
 }
 
 
@@ -57,7 +90,7 @@ function prayerMatches(request){
  const terms=[...new Set([...chosen.words,...words.split(/[^a-z]+/).filter(w=>w.length>4&&!['about','please','would','could','there','their','today','because'].includes(w))])];
  const scored=indexed.map(v=>({...v,score:terms.reduce((n,w)=>n+((v.summary||'').toLowerCase().includes(w)?2:0)+((v.theme||'').toLowerCase().includes(w)?1:0),0)})).filter(v=>v.score>0).sort((a,b)=>b.score-a.score);
  const refs=[...new Set([...scored.slice(0,3).map(v=>v.reference),...chosen.references])].slice(0,4);
- const names=chosen.names.filter(n=>nameData.some(x=>String(x.text).toLowerCase().includes(n.toLowerCase()))).slice(0,3);
+ const names=chosen.names.filter(n=>visibleNames().some(x=>String(x.text).toLowerCase().includes(n.toLowerCase()))).slice(0,3);
  return {title:chosen.title,refs,names};
 }
 function prayerReply(entry){
