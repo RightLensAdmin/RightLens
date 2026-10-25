@@ -89,9 +89,9 @@ const prayerPatterns=[
  {id:'future',pattern:/\b(future|direction|decision|decisions|unknown|uncertain|next step|guidance|choose|choice|tomorrow)\b/i,title:'You Can Trust Him With What Comes Next',refs:['Proverbs 3:5','Jeremiah 29:11','James 1:5','Psalm 32:8'],names:['Friend','Handiwork','Ambassador'],prayer:'Give clarity for the decisions ahead, courage for the next step, and peace when the path is not yet clear.'},
  {id:'work',pattern:/\b(job|work|career|employment|boss|business|interview|layoff|unemployed|income|paycheck|finances|financial|money|debt|rent|bills|provision)\b/i,title:'God Sees Your Work and Your Needs',refs:['Philippians 4:19','James 1:5','Matthew 6:33','Colossians 3:23'],names:['Handiwork','Ambassador','Beloved'],prayer:'Provide what is needed, open wise opportunities, and give diligence and peace in work and finances.'},
  {id:'health',pattern:/\b(health|sick|sickness|illness|healing|heal|hospital|doctor|diagnosis|diagnosed|pain|cancer|surgery|disease|injury|recover|recovery)\b/i,title:'You Can Find Strength in His Presence',refs:['Psalm 46:1','James 5:14','2 Corinthians 12:9','Psalm 34:18'],names:['Beloved','Friend','Redeemed'],prayer:'Bring comfort and strength through this health concern, wisdom to those providing care, and hope for each day.'},
- {id:'grief',pattern:/\b(grief|grieving|died|death|passed away|funeral|loss|lost someone|mourning|miss him|miss her)\b/i,title:'God Is Near to the Brokenhearted',refs:['Psalm 34:18','Matthew 5:4','Revelation 21:4','Psalm 147:3'],names:['Beloved','Friend','Children of God'],prayer:'Comfort every grieving heart, sustain them through sorrow, and surround them with love and faithful support.'},
- {id:'fear',pattern:/\b(anxiety|anxious|afraid|fear|fearful|worry|worried|stress|stressed|panic|overwhelmed|nervous|peace)\b/i,title:'You Are Invited Into His Peace',refs:['Philippians 4:6','Isaiah 41:10','1 Peter 5:7','John 14:27'],names:['Friend','Beloved','Children of God'],prayer:'Quiet anxious thoughts, renew courage, and remind this person that they do not have to face fear alone.'},
- {id:'lonely',pattern:/\b(lonely|alone|isolated|rejected|abandoned|friendless|belong|friendship)\b/i,title:'You Are Not Forgotten',refs:['Hebrews 13:5','John 15:15','Psalm 34:18','Romans 8:38'],names:['Friend','Beloved','Saints'],prayer:'Bring companionship, healing from rejection, and a deep assurance of Your presence and love.'},
+ {id:'grief',pattern:/\b(grief|grieving|died|death|passed away|funeral|loss|lost someone|mourning|miss him|miss her|heartbroken|brokenhearted|bereavement|bereaved)\b/i,title:'God Is Near to the Brokenhearted',refs:['Psalm 34:18','Matthew 5:4','Revelation 21:4','Psalm 147:3'],names:['Beloved','Friend','Children of God'],prayer:'Comfort every grieving heart, sustain them through sorrow, and surround them with love and faithful support.'},
+ {id:'fear',pattern:/\b(anxiety|anxious|afraid|fear|fearful|worry|worried|stress|stressed|panic|overwhelmed|nervous|panic attacks)\b/i,title:'You Are Invited Into His Peace',refs:['Philippians 4:6','Isaiah 41:10','1 Peter 5:7','John 14:27'],names:['Friend','Beloved','Children of God'],prayer:'Quiet anxious thoughts, renew courage, and remind this person that they do not have to face fear alone.'},
+ {id:'lonely',pattern:/\b(lonely|alone|isolated|rejected|abandoned|friendless|belong|friendship|heartbroken and alone)\b/i,title:'You Are Not Forgotten',refs:['Hebrews 13:5','John 15:15','Psalm 34:18','Romans 8:38'],names:['Friend','Beloved','Saints'],prayer:'Bring companionship, healing from rejection, and a deep assurance of Your presence and love.'},
  {id:'forgiveness',pattern:/\b(guilt|guilty|shame|ashamed|sin|forgive|forgiveness|repent|mistake|regret|temptation)\b/i,title:'You Can Receive His Mercy',refs:['1 John 1:9','Romans 8:1','Ephesians 1:7','Psalm 103:12'],names:['Redeemed','Beloved','Saints'],prayer:'Lead this person toward repentance where needed, confidence in Your mercy, and freedom to walk in a renewed way.'},
  {id:'purpose',pattern:/\b(purpose|calling|identity|worth|meaning|directionless|useless|confidence|self-esteem)\b/i,title:'You Are His Handiwork',refs:['Ephesians 2:10','1 Peter 2:9','Psalm 139:14','2 Corinthians 5:17'],names:['Handiwork','Ambassador','Beloved'],prayer:'Show this person their value in Christ and guide them toward the good work You have prepared.'}
 ];
@@ -123,19 +123,53 @@ function prayerIdentityCatalog(){
   return {label,reference};
  }).filter(x=>x.label&&x.reference);
 }
+// Distinguish a primary concern from incidental words and secondary concerns.
+// Deterministic: identical text and identical catalog yield identical selections.
+function prayerTopicMatches(request){
+ const lower=request.toLowerCase();
+ const scored=prayerPatterns.map((t,i)=>{
+  let hits=(lower.match(new RegExp(t.pattern.source,'gi'))||[]).length;
+  // A generic "love" or "father" is not enough to imply a relationship problem.
+  if(t.id==='family' && !/\b(wife|husband|marriage|married|spouse|divorce|relationship|relationships|son|daughter|children|child|kids|parent|mother|brother|sister|family)\b/i.test(lower))hits=0;
+  const emphases={
+   grief:/\b(grieving|grief|bereavement|mourning|heartbroken|brokenhearted|death|died|passed away|loss of someone|lost someone)\b/gi,
+   lonely:/\b(lonely|isolated|abandoned|rejected|friendless)\b/gi,
+   family:/\b(marriage|husband|wife|children|kids|parenting|family)\b/gi,
+   future:/\b(decisions|decision|guidance|uncertainty|future|choices)\b/gi,
+   health:/\b(cancer|diagnosis|illness|surgery|hospital)\b/gi,
+   forgiveness:/\b(forgiveness|repent|guilt|shame)\b/gi
+  };
+  const emphasis=emphases[t.id]?(lower.match(emphases[t.id])||[]).length:0;
+  return {...t,score:hits*2+emphasis*4,order:i};
+ }).filter(t=>t.score>0).sort((a,b)=>b.score-a.score||a.order-b.order);
+ return scored;
+}
 function prayerFourNames(request,matched){
  const catalog=prayerIdentityCatalog(),lower=request.toLowerCase();
- const tokens=new Set((lower.match(/[a-z]+/g)||[]));
- const topics=new Map(matched.map(t=>[t.id,t.score]));
+ const tokens=new Set(lower.match(/[a-z]+/g)||[]);
+ const primary=matched[0],secondary=matched[1];
  const scored=catalog.map((item,i)=>{
   const rule=prayerIdentityRules.find(r=>r.name.toLowerCase()===item.label.toLowerCase());
-  const topicScore=rule?rule.topics.reduce((n,t)=>n+(topics.get(t)||0)*7,0):0;
-  const wordScore=rule?rule.words.reduce((n,w)=>n+(tokens.has(w)?4:0),0):0;
+  const primaryWeight=rule&&primary&&rule.topics.includes(primary.id)?32:0;
+  const secondaryWeight=rule?matched.slice(1).reduce((sum,t)=>sum+(rule.topics.includes(t.id)?Math.min(t.score,5)*2:0),0):0;
+  const wordScore=rule?rule.words.reduce((n,w)=>n+(tokens.has(w)?5:0),0):0;
   const labelScore=item.label.toLowerCase().split(/\W+/).reduce((n,w)=>n+(w.length>3&&tokens.has(w)?2:0),0);
-  return {...item,score:topicScore+wordScore+labelScore,i};
+  // Specific contextual associations outrank broad identities, without random rotation.
+  const contextual={
+   grief:{'Loved One':22,'Beloved':20,'Friend':19,'Redeemed':13,'Faith-filled Ones':6,'Wise & Enlightened':-24,'Imitator of God':-22},
+   lonely:{'Friend':25,'Beloved':22,'Loved One':20,'Children of God':13,'Wise & Enlightened':-20},
+   family:{'Imitator of God':17,'Children of God':14,'Wise & Enlightened':10},
+   future:{'Wise & Enlightened':20,'Handiwork':15,'Faith-filled Ones':11},
+   forgiveness:{'Redeemed':25,'Holy & Clean':20,'Righteousness of God':17,'Beloved':12},
+   health:{'Beloved':16,'Friend':12,'Redeemed':10},
+   fear:{'Faith-filled Ones':18,'Beloved':14,'Friend':12},
+   purpose:{'Handiwork':20,'Chosen':15,'Ambassador':14},
+   work:{'Handiwork':18,'Ready for Good Work':16,'Wise & Enlightened':12}
+  };
+  const adjustment=(primary&&contextual[primary.id]&&contextual[primary.id][item.label])||0;
+  return {...item,score:primaryWeight+secondaryWeight+wordScore+labelScore+adjustment,i};
  });
  scored.sort((a,b)=>b.score-a.score||a.i-b.i);
- // Prefer distinct identity concepts when both singular/plural variants exist.
  const chosen=[],used=new Set();
  for(const item of scored){
   const normalized=item.label.toLowerCase().replace(/children of god/,'child of god').replace(/chosen ones/,'chosen');
@@ -147,26 +181,35 @@ function prayerFourNames(request,matched){
 }
 function prayerMatches(request){
  const lower=request.toLowerCase();
- const matched=prayerPatterns.map(t=>({...t,score:(lower.match(new RegExp(t.pattern.source,'gi'))||[]).length})).filter(t=>t.score>0).sort((a,b)=>b.score-a.score);
+ const matched=prayerTopicMatches(request);
  const primary=matched[0]||{id:'general',title:'Bring Your Heart to God',refs:['Psalm 46:1','James 1:5','Philippians 4:6','Psalm 34:18'],prayer:'Give strength for the concerns expressed here, wisdom for each next step, and hope in Your faithfulness.'};
- const secondary=matched.find(t=>t.id!==primary.id);
+ // Keep every explicitly supported concern, including separate and supporting threads.
+ // A topic requires an actual keyword match; primary priority affects ordering, not inclusion.
+ const concerns=matched.length?matched:[primary];
  const terms=[...new Set((lower.match(/[a-z]{4,}/g)||[]).filter(w=>!prayerStopWords.has(w)))];
  const indexed=[...verses.map(v=>({reference:v.reference,summary:v.summary||'',theme:v.theme||''})),...studyData.R.map(v=>({reference:v.reference,summary:v.note||'',theme:v.section||''}))];
  const scored=indexed.map(v=>({...v,score:terms.reduce((n,w)=>n+((v.summary+' '+v.theme).toLowerCase().includes(w)?1:0),0)})).filter(v=>v.score>=2).sort((a,b)=>b.score-a.score);
- const refs=[...new Set([primary.refs[0],...(secondary?[secondary.refs[0]]:[]),...primary.refs.slice(1),...scored.slice(0,2).map(v=>v.reference)])].slice(0,4);
- const names=prayerFourNames(request,matched);
- const fragments=matched.slice(0,3).map(t=>t.prayer);
- return {title:primary.title,refs,names,prayer:fragments.join(' '),topic:primary.id,secondary:secondary?.id||'',request};
+ const refs=[...new Set([primary.refs[0],...primary.refs.slice(1,3),...concerns.slice(1).map(t=>t.refs[0]),...primary.refs.slice(3),...scored.slice(0,2).map(v=>v.reference)])].slice(0,4);
+ const names=prayerFourNames(request,concerns);
+ const fragments=concerns.map(t=>t.prayer);
+ return {title:primary.title,refs,names,prayer:fragments.join(' '),topic:primary.id,secondary:concerns[1]?.id||'',topics:concerns.map(t=>t.id),request};
 }
 function prayerReply(entry){
  const names=(entry.names||[]).map(n=>typeof n==='string'?{name:n,ref:''}:n);
  const nameText=names.map(n=>esc(n.name)).join(', ');
  const topicText={family:'family and relationships',future:'the future and choices ahead',work:'work and financial needs',health:'health and healing',grief:'grief and loss',fear:'fear and anxiety',lonely:'loneliness and belonging',forgiveness:'forgiveness and renewal',purpose:'purpose and identity',general:'the concerns shared'};
  const subject=topicText[entry.topic]||'the concerns shared';
- const secondary=entry.secondary&&topicText[entry.secondary]?', as well as '+topicText[entry.secondary]:'';
- const identityPhrase=names.length?'Thank You for calling Your people '+names.map(n=>n.name).join(', ')+'. ':'';
+ const extraTopics=(entry.topics||[entry.topic,entry.secondary].filter(Boolean)).filter(t=>t!==entry.topic);
+ const secondary=extraTopics.length?', as well as '+extraTopics.map(t=>topicText[t]).filter(Boolean).join(', '):'';
+ const identityPhrase=names.length?'Remind this person that their identity is rooted in You. '+names.map((n,i)=>{
+  const label=n.name;
+  if(i===0)return 'As '+label+', help them rest in Your truth. ';
+  if(i===1)return 'Teach them to live as '+label+'. ';
+  if(i===2)return 'Let the name '+label+' encourage their heart. ';
+  return 'Strengthen them to walk as '+label+'. ';
+ }).join(''):'';
  const spiritPhrase=names.some(n=>/friend|beloved|loved one/i.test(n.name))?'Holy Spirit, increase the awareness of Your presence in their life; let them know Your friendship and know themselves as beloved. ': 'Holy Spirit, make Your presence known and guide them into Your truth. ';
- const mercyPhrase=entry.topic==='forgiveness'||entry.secondary==='forgiveness'?'Through the blood of Jesus, remind them of the mercy and forgiveness You offer. Let Your kindness bring restoration and Your grace bring beauty. ':'Through Jesus Christ, let Your mercy and kindness bring hope, and Your grace bring beauty even in difficult circumstances. ';
+ const mercyPhrase=(entry.topics||[entry.topic,entry.secondary]).includes('forgiveness')?'Through the blood of Jesus, remind them of the mercy and forgiveness You offer. Let Your kindness bring restoration and Your grace bring beauty. ':'Through Jesus Christ, let Your mercy and kindness bring hope, and Your grace bring beauty even in difficult circumstances. ';
  const prayer='Father, we bring '+subject+secondary+' before You. '+identityPhrase+esc(entry.prayer||'Give wisdom, courage, and hope for the next step.');
  return `<div class="prayer-reply"><span class="eyebrow dark">YOUR RIGHT-PRAYER WORD</span><h3>${esc(entry.title)}</h3><p>As you bring ${esc(subject)} before God, these passages offer a place to find strength, courage, and hope. Read them in context and take time to reflect on what they say.</p><h4>Scripture for your prayer</h4><div class="prayer-scriptures">${entry.refs.map(ref=>`<div class="prayer-scripture"><strong>${esc(ref)}</strong> ${passageLink(ref)} <span class="bible-prayer-verse" data-bible-ref="${esc(ref)}"></span></div>`).join('')}</div><h4>Names God calls His people</h4><p>Explore these names from the Your Name research and their biblical context:</p><div class="prayer-name-chips">${names.map(n=>n.ref?`<button type="button" class="prayer-name-chip" data-name-ref="${esc(n.ref.split(/\s*&\s*/)[0])}" title="Read ${esc(n.ref)}">${esc(n.name)} <small>${esc(n.ref)}</small></button>`:`<span class="prayer-name-chip">${esc(n.name)}</span>`).join('')}</div><p><strong>God calls you:</strong> ${nameText} <strong>(and much more!)</strong></p><button class="subtle" data-go-names>Explore Your Name →</button><h4>A prayer for you</h4><p>${esc(prayer+' '+spiritPhrase+mercyPhrase+'Give them strength, courage, and hope as they seek You. In Jesus\' name, amen.')}</p><p>Thank you for sharing your prayer. For follow-up, contact <a href="mailto:prayerformvolunteer@gmail.com">prayerformvolunteer@gmail.com</a>.</p></div>`;
 }
