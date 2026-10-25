@@ -123,10 +123,21 @@ function prayerIdentityCatalog(){
   return {label,reference};
  }).filter(x=>x.label&&x.reference);
 }
+// Interpret the speaker's stance across the whole request, not its first sentence.
+// Positive mentions of family, work or health are not automatically requests for repair.
+function prayerStance(request){
+ const text=request.toLowerCase();
+ const count=rx=>(text.match(rx)||[]).length;
+ const joy=count(/\b(thank(?:s|ful|sgiving)?|gratitude|grateful|rejoic(?:e|ing)|joy(?:ful)?|celebrat(?:e|ion|ing)|prais(?:e|ing)|worship|bless(?:ed|ings)?|answered prayers?|faithfulness|goodness|glory|delight)\b/gi);
+ const trouble=count(/\b(struggl(?:e|ing)|pain|sick|illness|griev(?:e|ing)|loss|died|anxi(?:ety|ous)|afraid|fear|worried|worry|debt|unemployed|broken|conflict|hurt|forgiv(?:e|eness)|restore|restoration|need help|please heal|please provide)\b/gi);
+ return {joy,trouble,celebration:joy>=3&&joy>=trouble*2};
+}
+const celebrationPrayerTopic={id:'celebration',title:'Rejoice in His Faithfulness',refs:['Psalm 126:3','Philippians 4:4','1 Thessalonians 5:16','Psalm 100:4'],prayer:'Thank You for prayers answered and blessings received. Deepen their joy and gratitude; let their praise overflow into worship, generosity, and encouragement for others.',score:0};
 // Distinguish a primary concern from incidental words and secondary concerns.
 // Deterministic: identical text and identical catalog yield identical selections.
 function prayerTopicMatches(request){
  const lower=request.toLowerCase();
+ const stance=prayerStance(request);
  const scored=prayerPatterns.map((t,i)=>{
   let hits=(lower.match(new RegExp(t.pattern.source,'gi'))||[]).length;
   // A generic "love" or "father" is not enough to imply a relationship problem.
@@ -140,8 +151,12 @@ function prayerTopicMatches(request){
    forgiveness:/\b(forgiveness|repent|guilt|shame)\b/gi
   };
   const emphasis=emphases[t.id]?(lower.match(emphases[t.id])||[]).length:0;
-  return {...t,score:hits*2+emphasis*4,order:i};
+  // In a predominantly joyful request, do not turn mentions of loved ones
+  // into implied family conflict, or mentions of provision into financial need.
+  if(stance.celebration && ['family','future','work','fear','forgiveness'].includes(t.id))hits=0;
+  return {...t,score:hits*2+(hits?emphasis*4:0),order:i};
  }).filter(t=>t.score>0).sort((a,b)=>b.score-a.score||a.order-b.order);
+ if(stance.celebration)scored.unshift({...celebrationPrayerTopic,score:Math.max(20,stance.joy*5),order:-1});
  return scored;
 }
 function prayerFourNames(request,matched){
@@ -164,7 +179,8 @@ function prayerFourNames(request,matched){
    health:{'Beloved':16,'Friend':12,'Redeemed':10},
    fear:{'Faith-filled Ones':18,'Beloved':14,'Friend':12},
    purpose:{'Handiwork':20,'Chosen':15,'Ambassador':14},
-   work:{'Handiwork':18,'Ready for Good Work':16,'Wise & Enlightened':12}
+   work:{'Handiwork':18,'Ready for Good Work':16,'Wise & Enlightened':12},
+   celebration:{'Loved One':24,'Love-filled (for others)':23,'Beloved':22,'Imitator of God':12,'Wise & Enlightened':-20,'Ready for Good Work':-12}
   };
   const adjustment=(primary&&contextual[primary.id]&&contextual[primary.id][item.label])||0;
   return {...item,score:primaryWeight+secondaryWeight+wordScore+labelScore+adjustment,i};
@@ -197,10 +213,11 @@ function prayerMatches(request){
 function prayerReply(entry){
  const names=(entry.names||[]).map(n=>typeof n==='string'?{name:n,ref:''}:n);
  const nameText=names.map(n=>esc(n.name)).join(', ');
- const topicText={family:'family and relationships',future:'the future and choices ahead',work:'work and financial needs',health:'health and healing',grief:'grief and loss',fear:'fear and anxiety',lonely:'loneliness and belonging',forgiveness:'forgiveness and renewal',purpose:'purpose and identity',general:'the concerns shared'};
+ const topicText={celebration:'thanksgiving, praise, and answered prayers',family:'family and relationships',future:'the future and choices ahead',work:'work and financial needs',health:'health and healing',grief:'grief and loss',fear:'fear and anxiety',lonely:'loneliness and belonging',forgiveness:'forgiveness and renewal',purpose:'purpose and identity',general:'the concerns shared'};
  const subject=topicText[entry.topic]||'the concerns shared';
  const extraTopics=(entry.topics||[entry.topic,entry.secondary].filter(Boolean)).filter(t=>t!==entry.topic);
  const secondary=extraTopics.length?', as well as '+extraTopics.map(t=>topicText[t]).filter(Boolean).join(', '):'';
+ const celebrating=entry.topic==='celebration';
  const identityPhrase=names.length?'Remind this person that their identity is rooted in You. '+names.map((n,i)=>{
   const label=n.name;
   if(i===0)return 'As '+label+', help them rest in Your truth. ';
@@ -208,10 +225,10 @@ function prayerReply(entry){
   if(i===2)return 'Let the name '+label+' encourage their heart. ';
   return 'Strengthen them to walk as '+label+'. ';
  }).join(''):'';
- const spiritPhrase=names.some(n=>/friend|beloved|loved one/i.test(n.name))?'Holy Spirit, increase the awareness of Your presence in their life; let them know Your friendship and know themselves as beloved. ': 'Holy Spirit, make Your presence known and guide them into Your truth. ';
- const mercyPhrase=(entry.topics||[entry.topic,entry.secondary]).includes('forgiveness')?'Through the blood of Jesus, remind them of the mercy and forgiveness You offer. Let Your kindness bring restoration and Your grace bring beauty. ':'Through Jesus Christ, let Your mercy and kindness bring hope, and Your grace bring beauty even in difficult circumstances. ';
- const prayer='Father, we bring '+subject+secondary+' before You. '+identityPhrase+esc(entry.prayer||'Give wisdom, courage, and hope for the next step.');
- return `<div class="prayer-reply"><span class="eyebrow dark">YOUR RIGHT-PRAYER WORD</span><h3>${esc(entry.title)}</h3><p>As you bring ${esc(subject)} before God, these passages offer a place to find strength, courage, and hope. Read them in context and take time to reflect on what they say.</p><h4>Scripture for your prayer</h4><div class="prayer-scriptures">${entry.refs.map(ref=>`<div class="prayer-scripture"><strong>${esc(ref)}</strong> ${passageLink(ref)} <span class="bible-prayer-verse" data-bible-ref="${esc(ref)}"></span></div>`).join('')}</div><h4>Names God calls His people</h4><p>Explore these names from the Your Name research and their biblical context:</p><div class="prayer-name-chips">${names.map(n=>n.ref?`<button type="button" class="prayer-name-chip" data-name-ref="${esc(n.ref.split(/\s*&\s*/)[0])}" title="Read ${esc(n.ref)}">${esc(n.name)} <small>${esc(n.ref)}</small></button>`:`<span class="prayer-name-chip">${esc(n.name)}</span>`).join('')}</div><p><strong>God calls you:</strong> ${nameText} <strong>(and much more!)</strong></p><button class="subtle" data-go-names>Explore Your Name →</button><h4>A prayer for you</h4><p>${esc(prayer+' '+spiritPhrase+mercyPhrase+'Give them strength, courage, and hope as they seek You. In Jesus\' name, amen.')}</p><p>Thank you for sharing your prayer. For follow-up, contact <a href="mailto:prayerformvolunteer@gmail.com">prayerformvolunteer@gmail.com</a>.</p></div>`;
+ const spiritPhrase=celebrating?'Holy Spirit, increase their joy in Your presence and help them share Your goodness with others. ':names.some(n=>/friend|beloved|loved one/i.test(n.name))?'Holy Spirit, increase the awareness of Your presence in their life; let them know Your friendship and know themselves as beloved. ': 'Holy Spirit, make Your presence known and guide them into Your truth. ';
+ const mercyPhrase=celebrating?'Through Jesus Christ, thank You for mercy, kindness, and the beauty of Your grace. ':(entry.topics||[entry.topic,entry.secondary]).includes('forgiveness')?'Through the blood of Jesus, remind them of the mercy and forgiveness You offer. Let Your kindness bring restoration and Your grace bring beauty. ':'Through Jesus Christ, let Your mercy and kindness bring hope, and Your grace bring beauty even in difficult circumstances. ';
+ const prayer=celebrating?'Father, we rejoice with this person in Your goodness and faithfulness. '+identityPhrase+esc(entry.prayer||'Let thanksgiving and praise fill their heart.'): 'Father, we bring '+subject+secondary+' before You. '+identityPhrase+esc(entry.prayer||'Give wisdom, courage, and hope for the next step.');
+ return `<div class="prayer-reply"><span class="eyebrow dark">YOUR RIGHT-PRAYER WORD</span><h3>${esc(entry.title)}</h3><p>${celebrating?'As you celebrate God’s faithfulness, these passages invite you to rejoice, give thanks, and share His goodness.':'As you bring '+esc(subject)+' before God, these passages offer a place to find strength, courage, and hope.'} Read them in context and take time to reflect on what they say.</p><h4>Scripture for your prayer</h4><div class="prayer-scriptures">${entry.refs.map(ref=>`<div class="prayer-scripture"><strong>${esc(ref)}</strong> ${passageLink(ref)} <span class="bible-prayer-verse" data-bible-ref="${esc(ref)}"></span></div>`).join('')}</div><h4>Names God calls His people</h4><p>Explore these names from the Your Name research and their biblical context:</p><div class="prayer-name-chips">${names.map(n=>n.ref?`<button type="button" class="prayer-name-chip" data-name-ref="${esc(n.ref.split(/\s*&\s*/)[0])}" title="Read ${esc(n.ref)}">${esc(n.name)} <small>${esc(n.ref)}</small></button>`:`<span class="prayer-name-chip">${esc(n.name)}</span>`).join('')}</div><p><strong>God calls you:</strong> ${nameText} <strong>(and much more!)</strong></p><button class="subtle" data-go-names>Explore Your Name →</button><h4>A prayer for you</h4><p>${esc(prayer+' '+spiritPhrase+mercyPhrase+(celebrating?'May their gratitude grow, their joy be contagious, and their life give You glory. In Jesus\' name, amen.':'Give them strength, courage, and hope as they seek You. In Jesus\' name, amen.'))}</p><p>Thank you for sharing your prayer. For follow-up, contact <a href="mailto:prayerformvolunteer@gmail.com">prayerformvolunteer@gmail.com</a>.</p></div>`;
 }
 function renderPrayer(){
  const entries=prayerEntries();
