@@ -198,7 +198,7 @@ function identityFamily(label){
  const families=[["doers of the word","those who hear and keep the word"],["those who endure","saints who persevere"],["those who bear fruit","those who bear much fruit"],["ambassador","ambassadors for christ","ambassador for christ"],["handiwork","gods workmanship","workmanship"],["friend","friends of jesus","friend of jesus"],["vessel for honor","vessel of honor","ready for good work"],["light","child of light","children of light","children of the day"],["letter from christ","letter of christ"],["tree planted by the waters","tree planted by streams of water"],["flourishing palm tree","cedar of lebanon"],['sign','wonder','miracle sign'],['repairer of broken walls','restorer of streets with dwellings'],['city of righteousness','faithful city'],['a crown of beauty','a royal diadem'],['a watered garden','a spring whose waters never fail'],['fellow citizen','fellow citizens with the saints'],['firstfruits','firstfruits of his creation'],['children of god','child of god','children of the living god'],['elect','chosen','chosen people','chosen ones'],['beloved','loved one','beloved children','holy and beloved'],['disciple','disciples'],['heir of god','fellow heirs','co heir with christ','heirs according to promise'],['gods possession','treasured possession'],['temple','temple of the holy spirit'],['light','child of light','children of the day'],['sheep of his pasture','sheep who follow jesus','gods flock'],['people of god','his people'],['holy priesthood','royal priesthood','priests to god'],['vessel of honor','ready for good work'],['those who hope in the lord','those who wait for the lord'],['saints','called to be holy']];
  return families.find(f=>f.includes(key))?.[0]||key;
 }
-function prayerExpandedNames(request,matched){
+function wordUpIntents(request){
  const lower=request.toLowerCase();
  const intents=new Set();
  const normalized=lower.replace(/[’']/g,"'");
@@ -212,6 +212,11 @@ function prayerExpandedNames(request,matched){
  if(/\b(my calling|your purpose for me|serve your kingdom|spiritual authority|ministry of reconciliation|use me for your glory)\b/.test(normalized))intents.add("purpose");
  if(/\b(obey your word|walk by faith|trust and obey|follow your commands|faithful obedience|keep your commandments)\b/.test(normalized))intents.add("obedience");
  if(/\b(grow spiritually|spiritual maturity|mature in christ|become more like christ|transform my heart|grow in grace)\b/.test(normalized))intents.add("maturity");
+ return intents;
+}
+function prayerExpandedNames(request,matched){
+ const lower=request.toLowerCase();
+ const intents=wordUpIntents(request);
  const catalog=[...prayerIdentityCatalog(),...[...intentIdentityIndex,...spiritualIntentIndex,...devotionIntentIndex,...discernmentIntentIndex,...maturityReviewIndex,...covenantReviewIndex].filter(x=>intents.has(x.intent))];
  const tokens=new Set(lower.match(/[a-z]+/g)||[]);
  const primary=matched[0],secondary=matched[1];
@@ -240,8 +245,9 @@ function prayerExpandedNames(request,matched){
   const adjustment=(item.keywords||[]).reduce((n,w)=>n+((w.includes(" ")?lower.includes(w):tokens.has(w))?24:0),0);
   // Broad topic membership is weaker evidence than a specific prayer association.
   const specific=adjustment+wordScore+labelScore+(intents.has(item.intent)?100:0);
-  const relevance=primaryWeight+secondaryWeight+specific;
-  return {...item,score:relevance,specific,i};
+  const broadWeight=wordUpBroadIdentityWeight(request,item.label);
+  const relevance=primaryWeight+secondaryWeight+specific+broadWeight;
+  return {...item,score:relevance,specific:specific+broadWeight,i};
  });
  scored.sort((a,b)=>b.score-a.score||a.label.localeCompare(b.label));
  const strong=scored.some(x=>x.specific>=24);
@@ -277,16 +283,374 @@ function prayerMatches(request){
  const fragments=concerns.map(t=>t.id==='family'?familyContext:t.id==='future'?t.prayer+' '+discernmentContext:t.prayer);
  return {title:primary.title,refs,names,prayer:fragments.join(' '),topic:primary.id,secondary:concerns[1]?.id||'',topics:concerns.map(t=>t.id),request};
 }
+// Reviewed applications are activated only by an explicitly recognized prayer intention.
+const wordUpApplications={
+  "Disciple": [
+    [
+      "love",
+      "know the love of Jesus dwelling in them and receive strength to love others as He has loved them (John 13:34–35)"
+    ]
+  ],
+  "Imitator of God": [
+    [
+      "love",
+      "know themselves as Your beloved children and receive grace to reflect the self-giving love of Christ toward others (Ephesians 5:1–2)"
+    ]
+  ],
+  "Children of the Most High": [
+    [
+      "love",
+      "reflect Your very nature in how they love others; pour Your love into their heart through the Holy Spirit, teaching them to love as You love, for You are kind even to the ungrateful and wicked (Luke 6:35; Romans 5:5)"
+    ]
+  ],
+  "Merciful": [
+    [
+      "love",
+      "know the richness of Your mercy toward them and receive a merciful heart toward others (Matthew 5:7; Ephesians 2:4–5)"
+    ]
+  ],
+  "Good Stewards of God’s Grace": [
+    [
+      "love",
+      "receive strength from You to share the gifts of Your grace in love, so that others may encounter Your goodness (1 Peter 4:10–11)"
+    ]
+  ],
+  "Those Born of God": [
+    [
+      "love",
+      "know Your love as those born of You, and let the love You first showed them overflow toward others (1 John 4:7–11,19)"
+    ]
+  ],
+  "Servants of One Another": [
+    [
+      "love",
+      "know the freedom Christ gives and receive His love as the strength to serve others freely (Galatians 5:1,13)"
+    ]
+  ],
+  "Those Who Seek His Face": [
+    [
+      "prayer",
+      "find their hearts drawn toward Your presence, trusting Your invitation to seek Your face as they pray (Psalm 24:6; Psalm 27:8)"
+    ]
+  ],
+  "The Godly": [
+    [
+      "prayer",
+      "find peace in Your faithful attention to their prayer, remembering that You set apart the godly for Yourself (Psalm 4:3,8)"
+    ]
+  ],
+  "Those Who Call Upon Him in Truth": [
+    [
+      "prayer",
+      "know Your nearness as they call upon You, and receive grace to bring their hearts before You in truth (Psalm 145:18)"
+    ]
+  ],
+  "His Elect Who Cry Out to Him": [
+    [
+      "prayer",
+      "find hope in Your justice and faithful care, receiving strength not to lose heart as they cry out to You (Luke 18:1–7)"
+    ]
+  ],
+  "Friend": [
+    [
+      "prayer",
+      "know the friendship of Jesus, who makes known what He has heard from the Father, and draw near in trusting prayer (John 15:15)"
+    ]
+  ],
+  "True Worshipers": [
+    [
+      "prayer",
+      "know Your desire for worshipers and receive grace to draw near in spirit and truth (John 4:23–24)"
+    ]
+  ],
+  "Children of God": [
+    [
+      "prayer",
+      "know You as Father through the Spirit of adoption, who bears witness to their belonging as they pray (Romans 8:15–16)"
+    ]
+  ],
+  "Overcomer": [
+    [
+      "temptation",
+      "find strength in the victory of Jesus and receive grace to remain faithful when temptation comes (Revelation 3:21; Hebrews 4:15–16)"
+    ]
+  ],
+  "Those Who Resist the Devil": [
+    [
+      "temptation",
+      "find refuge in Your nearness and receive grace to submit to You and resist the devil (James 4:6–8)"
+    ]
+  ],
+  "Those Who Belong to Christ": [
+    [
+      "temptation",
+      "know their belonging to Christ and receive strength through Your Spirit to turn from the desires of the flesh (Galatians 5:16,24–25)"
+    ]
+  ],
+  "Children of Light": [
+    [
+      "temptation",
+      "know the light they have in the Lord and receive grace to resist darkness and walk in His goodness (Ephesians 5:8–9)"
+    ]
+  ],
+  "Vessel for Honor": [
+    [
+      "repentance",
+      "know Your desire to make them useful to You, and receive cleansing and strength to turn from sin toward good work (2 Timothy 2:21)"
+    ]
+  ],
+  "Washed and Sanctified": [
+    [
+      "repentance",
+      "find hope in the cleansing You provide through Jesus and the Spirit, receiving grace to turn away from sin (1 Corinthians 6:11)"
+    ]
+  ],
+  "New Creation": [
+    [
+      "repentance",
+      "know the new life You give in Christ and receive grace to leave behind the old ways as they turn toward You (2 Corinthians 5:17–18)"
+    ]
+  ],
+  "Those Who Confess Their Sins": [
+    [
+      "repentance",
+      "know Your faithfulness and justice in forgiving and cleansing, and receive courage to confess their sins before You (1 John 1:9)"
+    ]
+  ],
+  "Those Who Endure": [
+    [
+      "endurance",
+      "find hope in Your promise to those who love You and receive strength to remain steadfast through trial (James 1:12)"
+    ]
+  ],
+  "Those Who Wait for the Lord": [
+    [
+      "endurance",
+      "know You as the everlasting God who does not grow weary and receive renewed strength as they wait upon You (Isaiah 40:28–31)"
+    ]
+  ],
+  "More Than Conquerors": [
+    [
+      "endurance",
+      "know that hardship cannot separate them from Your love in Christ, and receive courage to persevere through Him who loves them (Romans 8:35–39)"
+    ]
+  ],
+  "Those Trained by Discipline": [
+    [
+      "endurance",
+      "know Your fatherly care and receive grace to endure Your training, bearing its fruit of righteousness and peace (Hebrews 12:5–11)"
+    ]
+  ],
+  "Doers of the Word": [
+    [
+      "obedience",
+      "know Your Word as the truth that gives freedom and receive grace to put it into practice (James 1:22–25)"
+    ]
+  ],
+  "Saints Who Persevere": [
+    [
+      "endurance",
+      "find strength in the faithfulness of Jesus and receive grace to keep Your commandments and persevere through hardship (Revelation 14:12)"
+    ]
+  ],
+  "Those Who Discern What Is Best": [
+    [
+      "wisdom",
+      "receive love from You that abounds in knowledge and discernment, so they may recognize what is best and bear fruit through Jesus Christ (Philippians 1:9–11)"
+    ]
+  ],
+  "Those Who Fear the Lord": [
+    [
+      "wisdom",
+      "know Your goodness as the One who instructs those who fear You, and receive wisdom to discern the way they should choose (Psalm 25:8–12)"
+    ]
+  ],
+  "Those Who Grow in Grace": [
+    [
+      "maturity",
+      "grow in the grace and knowledge of Jesus Christ, trusting His grace to sustain their spiritual growth (2 Peter 3:18)"
+    ]
+  ],
+  "Those Who Minister to the Lord": [
+    [
+      "worship",
+      "know the privilege of ministering to You and receive grace to offer worship and attend to the Holy Spirit (Acts 13:2)"
+    ]
+  ],
+  "Those Who Seek the Lord and Understand Justice": [
+    [
+      "wisdom",
+      "discern Your will through the understanding You give those who seek You, remembering that righteousness and justice are the foundation of Your throne (Proverbs 28:5; Psalm 89:14)"
+    ]
+  ],
+  "Living Sacrifice": [
+    [
+      "worship",
+      "know the depth of Your mercy and receive grace to surrender their life to You as an offering of worship (Romans 12:1–2)"
+    ]
+  ],
+  "Those Who Have the Mind of Christ": [
+    [
+      "wisdom",
+      "receive understanding through Your Spirit, who reveals the things of God, and discern Your will with the mind of Christ (1 Corinthians 2:10–16)"
+    ]
+  ],
+  "Those Who Meditate on His Testimonies": [
+    [
+      "wisdom",
+      "know You as their teacher and receive understanding as they meditate on Your testimonies (Psalm 119:99,102)"
+    ]
+  ],
+  "Those Whose Hearts Are Steadfast": [
+    [
+      "endurance",
+      "find security in Your faithfulness and receive a steadfast heart that trusts You through hardship (Psalm 112:7–8)"
+    ]
+  ],
+  "Those Whose Strength Is in God": [
+    [
+      "endurance",
+      "know You as their source of strength and receive courage to continue their journey with You (Psalm 84:5–7)"
+    ]
+  ],
+  "Beloved": [
+    [
+      "lonely",
+      "know that Your love in Christ cannot be separated from them by any circumstance, and receive assurance of belonging even in loneliness (Romans 1:7; Romans 8:38–39)"
+    ],
+    [
+      "grief",
+      "receive comfort in Your steadfast love, knowing that sorrow cannot separate them from the love of Christ (Romans 1:7; Romans 8:38–39)"
+    ]
+  ],
+  "Sheep of His Pasture": [
+    [
+      "fear",
+      "know You as their Shepherd and receive courage through Your presence even in the darkest valley (Psalm 100:3; Psalm 23:4)"
+    ],
+    [
+      "lonely",
+      "know the care of Jesus who knows His sheep, and find companionship in Your presence (Psalm 100:3; John 10:14)"
+    ]
+  ],
+  "God’s Household": [
+    [
+      "lonely",
+      "know that through Christ they are no longer strangers but members of Your household, and receive grace to find fellowship among Your people (Ephesians 2:18–19)"
+    ]
+  ],
+  "Oak of Righteousness": [
+    [
+      "grief",
+      "receive Your comfort in mourning and hope in Your restoring work, as Isaiah portrays Your planting for the display of Your glory (Isaiah 61:1–3)"
+    ]
+  ],
+  "Living Stone": [
+    [
+      "lonely",
+      "know Christ as the living Stone and receive encouragement through belonging to the spiritual house You are building (1 Peter 2:4–5)"
+    ],
+    [
+      "purpose",
+      "receive grace to serve You as part of the spiritual house You are building through Jesus Christ (1 Peter 2:4–5)"
+    ]
+  ],
+  "Letter from Christ": [
+    [
+      "purpose",
+      "receive the work of Your Spirit upon their heart so that their life may bear witness to Christ rather than relying on their own sufficiency (2 Corinthians 3:3–5)"
+    ]
+  ],
+  "Letter of Christ": [
+    [
+      "purpose",
+      "receive the work of Your Spirit upon their heart so that their life may bear witness to Christ rather than relying on their own sufficiency (2 Corinthians 3:3–5)"
+    ]
+  ],
+  "Handiwork": [
+    [
+      "purpose",
+      "know themselves as Your workmanship in Christ and receive grace to walk in the good works You prepared (Ephesians 2:8–10)"
+    ]
+  ],
+  "Ambassador": [
+    [
+      "purpose",
+      "receive grace to represent Christ through the message of reconciliation entrusted to His servants (2 Corinthians 5:18–20)"
+    ]
+  ],
+  "Ambassadors for Christ": [
+    [
+      "purpose",
+      "receive grace to represent Christ through the message of reconciliation entrusted to His servants (2 Corinthians 5:18–20)"
+    ]
+  ],
+  "Witness": [
+    [
+      "purpose",
+      "receive power through the Holy Spirit to bear witness to Jesus with faithfulness (Acts 1:8)"
+    ]
+  ],
+  "God’s Fellow Worker": [
+    [
+      "purpose",
+      "receive humility and strength to serve alongside Your people, trusting You as the One who gives growth (1 Corinthians 3:6–9)"
+    ]
+  ],
+  "Fellow Workers of God": [
+    [
+      "purpose",
+      "receive humility and strength to serve alongside Your people, trusting You as the One who gives growth (1 Corinthians 3:6–9)"
+    ]
+  ]
+};
+wordUpApplications['Oil Poured Out']=[['worship','receive grace to pour out their love, praise and strength before You, as a fragrant offering through Christ; let the poetic image of perfume poured out inspire devotion (Song of Solomon 1:3; Ephesians 5:2; Hebrews 13:15)']];
+wordUpApplications['Tree Planted by the Waters']=[['endurance','receive strength from You as they trust in You through dry seasons, like a tree rooted beside water (Jeremiah 17:7–8)']];
+wordUpApplications['Flourishing Palm Tree']=[['maturity','receive enduring fruitfulness through Your sustaining presence, even in later years (Psalm 92:12–15)']];
+wordUpApplications['A Watered Garden']=[['love','receive Your guidance and strength as they extend compassionate care to those in need (Isaiah 58:7–11)']];
+const wordUpIntentPhrases={worship:'surrender and worship',wisdom:'discern Your will',maturity:'grow spiritually',obedience:'obey Your Word',endurance:'persevere through hardship',love:'love others',prayer:'draw near to You in prayer',temptation:'resist temptation',repentance:'turn away from sin',purpose:'serve Your purpose'};
+function wordUpApplication(n,intents){
+ const row=(wordUpApplications[n.name]||[]).find(([intent])=>intents.has(intent));
+ if(!row)return '';
+ let phrase=row[1];
+ if(n.name==='Those Who Grow in Grace'){
+  const actions=[['worship','surrender'],['obedience','obey Your Word'],['endurance','persevere']].filter(([k])=>intents.has(k)).map(([,v])=>v);
+  if(actions.length)phrase='receive grace to '+actions.join(', ')+' and '+phrase;
+ }
+ if(n.name==='Those Who Minister to the Lord'&&intents.has('maturity'))phrase='grow spiritually in the privilege of ministering to You, receiving grace to worship and attend to the Holy Spirit (Acts 13:2)';
+ return phrase;
+}
+const broadPrayerTopics=[["healing|illness|chronic pain|surgery|physical healing|recovery from illness", "bring healing and relief, and sustain those who suffer through Your compassion", "Psalm 103:2–4"], ["emotional healing|trauma|heartbreak|past hurts", "bind up wounded hearts and restore hope through Your nearness", "Psalm 147:3"], ["mental health|depression|intrusive thoughts|anxiety|panic attacks", "grant peace and compassionate support in distress, without shame", "Psalm 34:18"], ["bereavement|grief|grieving|passed away|mourning", "comfort those who mourn with Your presence", "2 Corinthians 1:3–4"], ["addiction|sobriety|substance abuse|unhealthy habits", "grant strength to seek support and freedom from destructive habits", "Galatians 5:1"], ["sleep|insomnia|exhaustion|physical renewal", "grant rest and peace in Your care", "Psalm 4:8"], ["medical professionals|doctors|surgeons|caregivers", "grant wisdom and compassion to those providing care", "James 1:5"], ["fertility|pregnancy|conception|safe delivery|healthy babies", "grant comfort in uncertainty and care for parents and children", "Psalm 139:13–14"], ["aging|end-of-life|later years|old age", "sustain those in later years with Your faithful care", "Isaiah 46:4"], ["body image|self-acceptance|body insecurity", "help them receive their dignity as Your creation", "Psalm 139:14"], ["family relationships|family harmony|unity at home", "grant patience and love in the household", "Colossians 3:12–14"], ["marriage|spouse|marital|partnership", "strengthen mutual love, faithfulness and care", "Ephesians 5:21"], ["parenting|raising children|parental", "grant parents wisdom and gentleness", "Ephesians 6:4"], ["children's safety|children’s safety|protect my children|children's future", "watch over children and guide those who care for them", "Psalm 121:7–8"], ["prodigal|estranged|estrangement", "grant hope, wisdom and room for reconciliation without coercion", "Luke 15:20"], ["friendship|friendships|loyal friends", "provide faithful companionship and mutual encouragement", "Proverbs 17:17"], ["conflict resolution|argument|common ground", "grant humility and wisdom to listen and pursue peace", "James 1:19"], ["loneliness|isolation|feel alone", "grant companionship and assurance of Your presence", "Psalm 68:5–6"], ["singleness|dating|future spouse", "grant contentment and discernment in relationships", "Philippians 4:11–13"], ["enemies|difficult people|resentment", "pour out Your love and grant wisdom to pursue peace safely", "Matthew 5:44"], ["forgiveness|forgive|forgiving", "help them receive Your mercy and extend forgiveness without excusing harm", "Ephesians 4:32"], ["gratitude|thanksgiving|thank you", "awaken gratitude for Your goodness", "Psalm 107:1"], ["praise|adoration|worship", "receive their praise and draw their hearts toward Your glory", "Psalm 96:8"], ["confession|repentance|repent", "grant honest confession and renewal through Your mercy", "1 John 1:9"], ["wisdom|discernment|discern your will", "grant wisdom generously as they seek You", "James 1:5"], ["patience|self-control|waiting season", "produce patience and self-control through Your Spirit", "Galatians 5:22–23"], ["humility|pride|teachable spirit", "grant grace to walk humbly before You", "James 4:6"], ["courage|boldness|standing up", "grant courage through Your presence", "2 Timothy 1:7"], ["doubt|unbelief|dry season", "meet weakness with mercy and strengthen faith", "Mark 9:24"], ["purpose|calling|discovering gifts", "guide their gifts toward service in Your grace", "1 Peter 4:10"], ["financial hardship|debt|scarcity|financial crisis", "provide daily needs and wise support in hardship", "Matthew 6:11"], ["stewardship|generosity|giving cheerfully", "grant wisdom and a generous heart through Your grace", "2 Corinthians 9:7–8"], ["career|job hunting|interview|unemployment", "guide their work and provide wise opportunities", "Psalm 90:17"], ["workplace stress|leadership|burnout|coworkers", "grant integrity, wisdom and rest in their responsibilities", "Colossians 3:23"], ["education|students|test anxiety|teachers", "grant understanding and patient encouragement in learning", "Proverbs 2:6"], ["housing|shelter|finding a home|homeless", "provide safe shelter and compassionate practical help", "Isaiah 58:7"], ["life transitions|moving|retirement|new chapter", "guide each step through change", "Proverbs 3:5–6"], ["time management|priorities|busyness", "teach them to number their days with wisdom", "Psalm 90:12"], ["creativity|inspiration|creative block", "grant skill and wisdom to use gifts for good", "Exodus 35:31–35"], ["travel|flight|journey|road trip", "watch over those traveling and grant wise decisions", "Psalm 121:8"], ["spiritual protection|temptation|spiritual warfare", "strengthen them in Your truth and help them resist evil", "Ephesians 6:10–11"], ["national leaders|local leaders|government|politicians", "grant leaders wisdom and justice for those they serve", "1 Timothy 2:1–2"], ["world peace|war|civilians|armed conflict", "bring peace and protect those suffering violence", "Psalm 46:9"], ["disaster relief|storms|earthquake|wildfire|flood", "grant refuge and mobilize compassionate aid", "Psalm 46:1"], ["poverty|impoverished|marginalized|food insecurity", "provide food, dignity and advocates for those in need", "Proverbs 31:8–9"], ["local church|pastors|spiritual leaders|church volunteers", "strengthen Your church in unity and love", "Ephesians 4:15–16"], ["neighbors|neighbours|local community|neighborhood", "grant mutual care and peace among neighbors", "Romans 12:18"], ["first responders|military|firefighters|paramedics", "grant courage, wisdom and care for those serving others", "Psalm 46:1"], ["justice|legal battles|court case|fair outcome", "bring truth to light and guide fair decisions", "Psalm 89:14"], ["creation|environment|harvest|stewardship of the earth", "grant wisdom to care for the earth You entrusted to humanity", "Genesis 2:15"]];
+const broadIdentityLinks={"0": ["Those Comforted by God", "Sheep of His Pasture", "Those Who Hope in the Lord"], "1": ["Oak of Righteousness", "Those Comforted by God", "Beloved"], "2": ["Those Comforted by God", "Sheep of His Pasture", "Those Who Hope in the Lord"], "3": ["Those Who Mourn", "Those Comforted by God", "Oak of Righteousness"], "4": ["Free in Christ", "New Creation", "Those Led by the Spirit"], "5": ["Sheep of His Pasture", "Those Who Hope in the Lord"], "17": ["Beloved", "Friend", "God’s Household"], "30": ["Sheep of His Pasture", "Those Who Hope in the Lord", "Prisoners of Hope"], "32": ["Handiwork", "Ready for Good Work"], "35": ["Sheep of His Pasture", "Those Who Hope in the Lord"], "42": ["Blessed Peacemakers", "Merciful"], "44": ["Merciful", "A Watered Garden", "Ready for Good Work"], "10": ["Blessed Peacemakers", "Imitator of God", "Merciful"], "11": ["Blessed Peacemakers", "Beloved Children", "Merciful"], "12": ["Imitator of God", "Children of Wisdom", "Faithful Ones"], "13": ["Sheep of His Pasture", "Shielded by God’s Power"], "14": ["Prisoners of Hope", "Merciful", "Repairer of Broken Walls"], "15": ["Friend", "Faithful Brother or Sister", "Beloved"], "16": ["Blessed Peacemakers", "Merciful", "Pure in Heart"], "18": ["Beloved", "Complete in Christ", "Those Who Wait for the Lord"], "19": ["Merciful", "Blessed Peacemakers", "Imitator of God"], "20": ["Recipients of Mercy", "Redeemed", "Merciful"], "31": ["Ready for Good Work", "A Watered Garden", "Merciful"], "33": ["Faithful Ones", "Handiwork", "Servant of God"], "34": ["Children of Wisdom", "Disciple"], "41": ["Those Who Hunger for Righteousness", "Blessed Peacemakers"], "43": ["Repairer of Broken Walls", "Restorer of Streets with Dwellings", "Merciful"], "45": ["Living Stone", "Member of Christ’s Body", "God’s Fellow Worker"], "46": ["Blessed Peacemakers", "Salt", "Light"], "47": ["Servant of God", "Merciful"], "48": ["Those Who Hunger for Righteousness", "Right-doer"]};
+function wordUpBroadIdentityWeight(request,label){return broadPrayerTopics.reduce((sum,[terms],i)=>sum+((broadIdentityLinks[i]||[]).includes(label)&&terms.split("|").some(term=>new RegExp("\\b"+term+"\\b","i").test(request))?36:0),0);}
+function broadPrayerApplications(request){return broadPrayerTopics.filter(([terms])=>terms.split("|").some(term=>new RegExp("\\b"+term+"\\b","i").test(request))).map(([,phrase,ref])=>"May You "+phrase+" ("+ref+").");}
 function prayerReply(entry){
  const names=(entry.names||[]).map(n=>typeof n==='string'?{name:n,ref:''}:n);
  const nameText=names.map(n=>esc(n.name)).join(', ');
  const topicText={celebration:'thanksgiving, praise, and answered prayers',gratitude:'gratitude for Your blessings',faith:'growth in faith',humility:'humility',love:'love for others',family:'family and relationships',future:'the future and choices ahead',work:'work and financial needs',health:'health and healing',grief:'grief and loss',fear:'fear and anxiety',lonely:'loneliness and belonging',forgiveness:'forgiveness and renewal',purpose:'purpose and identity',general:'the concerns shared'};
+ const intents=wordUpIntents(entry.request||'');
+ const requestText=(entry.request||'').toLowerCase();
+ if(/\b(lonely|loneliness|feel alone|feel abandoned|no one cares)\b/.test(requestText))intents.add('lonely');
+ if(/\b(grief|grieving|mourning|loss of|passed away|bereavement)\b/.test(requestText))intents.add('grief');
+ if(/\b(fear|afraid|anxious|anxiety|scared)\b/.test(requestText))intents.add('fear');
  const subject=topicText[entry.topic]||'the concerns shared';
+ const contextualSubject=[...intents].map(k=>wordUpIntentPhrases[k]).filter(Boolean).join(', ');
  const extraTopics=(entry.topics||[entry.topic,entry.secondary].filter(Boolean)).filter(t=>t!==entry.topic);
  const secondary=extraTopics.length?', as well as '+extraTopics.map(t=>topicText[t]).filter(Boolean).join(', '):'';
  const celebrating=entry.topic==='celebration';
  const identityPhrase=names.length?'Remind this person that their identity is rooted in You. '+names.map((n,i)=>{
   const label=n.name;
+  const applicationIntents=new Set(intents);
+  if(n.name==='Oil Poured Out'&&/\b(praise|worship|devotion)\b/i.test(requestText))applicationIntents.add('worship');
+  if(n.name==='Tree Planted by the Waters'&&/\b(drought|dry season)\b/i.test(requestText))applicationIntents.add('endurance');
+  if(n.name==='Flourishing Palm Tree'&&/\b(old age|later years|flourish)\b/i.test(requestText))applicationIntents.add('maturity');
+  const application=wordUpApplication(n,applicationIntents);
+  if(application){
+   if(i===0)return 'As '+label+', help them '+application+'. ';
+   if(i===1)return 'Teach them to live as '+label+'; help them '+application+'. ';
+   if(i===2)return 'Let the identity of '+label+' encourage their heart; help them '+application+'. ';
+   return 'Strengthen them to walk as '+label+'; help them '+application+'. ';
+  }
   if(i===0)return 'As '+label+', help them rest in Your truth. ';
   if(i===1)return 'Teach them to live as '+label+'. ';
   if(i===2)return 'Let the name '+label+' encourage their heart. ';
@@ -294,8 +658,9 @@ function prayerReply(entry){
  }).join(''):'';
  const spiritPhrase=celebrating?'Holy Spirit, increase their joy in Your presence and help them share Your goodness with others. ':names.some(n=>/friend|beloved|loved one/i.test(n.name))?'Holy Spirit, increase the awareness of Your presence in their life; let them know Your friendship and know themselves as beloved. ': 'Holy Spirit, make Your presence known and guide them into Your truth. ';
  const mercyPhrase=celebrating?'Through Jesus Christ, thank You for mercy, kindness, and the beauty of Your grace. ':(entry.topics||[entry.topic,entry.secondary]).includes('forgiveness')?'Through the blood of Jesus, remind them of the mercy and forgiveness You offer. Let Your kindness bring restoration and Your grace bring beauty. ':'Through Jesus Christ, let Your mercy and kindness bring hope, and Your grace guide each step. ';
- const prayer=celebrating?'Father, we rejoice with this person in Your goodness and faithfulness. '+identityPhrase+esc(entry.prayer||'Let thanksgiving and praise fill their heart.'): 'Father, we bring '+subject+secondary+' before You. '+identityPhrase+esc(entry.prayer||'Give wisdom, courage, and hope for the next step.');
- return `<div class="prayer-reply"><span class="eyebrow dark">YOUR WORDUP</span><h3>${esc(entry.title)}</h3><p>${celebrating?'As you give thanks for God’s blessings, these passages invite you to remember His goodness, grow in faith, and share His love.':'As you bring '+esc(subject)+' before God, these passages offer a place to find strength, courage, and hope.'} Read them in context and take time to reflect on what they say.</p><h4>Scripture for your prayer</h4><div class="prayer-scriptures">${entry.refs.map(ref=>`<div class="prayer-scripture"><strong>${esc(ref)}</strong> ${passageLink(ref)} <span class="bible-prayer-verse" data-bible-ref="${esc(ref)}"></span></div>`).join('')}</div><h4>Names God calls His people</h4><p>Explore these names and their biblical context:</p><div class="prayer-name-chips">${names.map(n=>n.ref?`<button type="button" class="prayer-name-chip" data-name-ref="${esc(n.ref.split(/\s*&\s*/)[0])}" title="Read ${esc(n.ref)}">${esc(n.name)} <small>${esc(n.ref)}${n.kind?` · ${esc(n.kind)} application`:""}</small></button>`:`<span class="prayer-name-chip">${esc(n.name)}</span>`).join('')}</div><p><strong>Biblical identities for reflection:</strong> ${nameText} <strong>(and much more!)</strong></p><button class="subtle" data-go-names>Explore Your Name →</button><h4>A prayer for you</h4><p>${esc(prayer+' '+spiritPhrase+mercyPhrase+(celebrating?'May their gratitude grow, their joy be contagious, and their life give You glory. In Jesus\' name, amen.':'Give them strength, courage, and hope as they seek You. In Jesus\' name, amen.'))}</p><p>Thank you for sharing your prayer. For follow-up, contact <a href="mailto:prayerformvolunteer@gmail.com">prayerformvolunteer@gmail.com</a>.</p></div>`;
+ const broadApplication=broadPrayerApplications(entry.request||'').join(' ');
+ const prayer=celebrating?'Father, we rejoice with this person in Your goodness and faithfulness. '+identityPhrase+esc(entry.prayer||'Let thanksgiving and praise fill their heart.'): 'Father, we bring '+(contextualSubject?'their desire to '+contextualSubject+(entry.topic!=='general'?', alongside '+subject+secondary:''):subject+secondary)+' before You. '+identityPhrase+esc(entry.prayer||'Give wisdom, courage, and hope for the next step.');
+ return `<div class="prayer-reply"><span class="eyebrow dark">YOUR WORDUP</span><h3>${esc(entry.title)}</h3><p>${celebrating?'As you give thanks for God’s blessings, these passages invite you to remember His goodness, grow in faith, and share His love.':'As you bring '+esc(subject)+' before God, these passages offer a place to find strength, courage, and hope.'} Read them in context and take time to reflect on what they say.</p><h4>Scripture for your prayer</h4><div class="prayer-scriptures">${entry.refs.map(ref=>`<div class="prayer-scripture"><strong>${esc(ref)}</strong> ${passageLink(ref)} <span class="bible-prayer-verse" data-bible-ref="${esc(ref)}"></span></div>`).join('')}</div><h4>Names God calls His people</h4><p>Explore these names and their biblical context:</p><div class="prayer-name-chips">${names.map(n=>n.ref?`<button type="button" class="prayer-name-chip" data-name-ref="${esc(n.ref.split(/\s*&\s*/)[0])}" title="Read ${esc(n.ref)}">${esc(n.name)} <small>${esc(n.ref)}${n.kind?` · ${esc(n.kind)} application`:""}</small></button>`:`<span class="prayer-name-chip">${esc(n.name)}</span>`).join('')}</div><p><strong>Biblical identities for reflection:</strong> ${nameText} <strong>(and much more!)</strong></p><button class="subtle" data-go-names>Explore Your Name →</button><h4>A prayer for you</h4><p>${esc(prayer+' '+broadApplication+' '+spiritPhrase+mercyPhrase+(celebrating?'May their gratitude grow, their joy be contagious, and their life give You glory. In Jesus\' name, amen.':'Give them strength, courage, and hope as they seek You. In Jesus\' name, amen.'))}</p><p>Thank you for sharing your prayer. For follow-up, contact <a href="mailto:prayerformvolunteer@gmail.com">prayerformvolunteer@gmail.com</a>.</p></div>`;
 }
 const prayerSavePref='rl-save-prayers-opt-in-v1';
 let prayerJournalOpen=false;
