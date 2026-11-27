@@ -1,4 +1,4 @@
-const CACHE='rightlens-v4-install';
+const CACHE='rightlens-v19-wordup-covenant-preview';
 const CORE=['/verses.json','/rvu.json','/names.json','/hero.jpg','/icon-192.png','/icon-512.png','/manifest.json'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
  const cache=await caches.open(CACHE);
